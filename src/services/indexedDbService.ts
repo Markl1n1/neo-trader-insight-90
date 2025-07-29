@@ -90,7 +90,7 @@ class IndexedDBService {
       const transaction = this.db!.transaction(['signals'], 'readonly');
       const store = transaction.objectStore('signals');
       const index = store.index('active');
-      const request = index.getAll(true);
+      const request = index.getAll(IDBKeyRange.only(true));
 
       request.onerror = () => reject(request.error);
       request.onsuccess = () => {
