@@ -1,3 +1,4 @@
+
 import { useEffect, useState } from 'react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { binanceWS } from '../services/binanceWebSocket';
@@ -41,45 +42,69 @@ const TradingPairTab = ({ symbol, isActive }: TradingPairTabProps) => {
     const handleData = (data: any) => {
       console.log(`📊 Received futures data for ${symbol}:`, data);
       
+      // Handle both ticker and kline data
+      let price = 0;
+      let volume = 0;
+      
       if (data.type === 'ticker') {
+        price = parseFloat(data.c || data.price || '0');
+        volume = parseFloat(data.v || data.volume || '0');
+      } else if (data.type === 'kline_1m' && data.k) {
+        // Extract from kline data structure
+        price = parseFloat(data.k.c || '0'); // Close price
+        volume = parseFloat(data.k.v || '0'); // Volume
+      }
+      
+      const delay = data.delay || 0;
+      
+      console.log(`💰 Extracted price: ${price}, volume: ${volume} for ${symbol}`);
+      
+      if (price > 0) {
         setConnectionStatus('Connected to Futures');
         
-        const price = parseFloat(data.c || data.price || '0');
-        const volume = parseFloat(data.v || data.volume || '0');
-        const delay = data.delay || 0;
-        
-        if (price > 0) {
-          // Update price and volume history
-          setPriceHistory(prev => {
-            const newHistory = [...prev, price];
-            return newHistory.length > 100 ? newHistory.slice(-100) : newHistory;
-          });
+        // Update price and volume history
+        setPriceHistory(prev => {
+          const newHistory = [...prev, price];
+          return newHistory.length > 100 ? newHistory.slice(-100) : newHistory;
+        });
 
-          setVolumeHistory(prev => {
-            const newHistory = [...prev, volume];
-            return newHistory.length > 100 ? newHistory.slice(-100) : newHistory;
-          });
+        setVolumeHistory(prev => {
+          const newHistory = [...prev, volume];
+          return newHistory.length > 100 ? newHistory.slice(-100) : newHistory;
+        });
 
-          // Use Web Worker for calculations
-          if (!isCalculating) {
-            setIsCalculating(true);
-            workerManager.calculateIndicators(
-              symbol,
-              [...priceHistory, price].slice(-100),
-              [...volumeHistory, volume].slice(-100),
-              price,
-              (result) => {
-                console.log(`⚡ Worker calculated indicators for ${symbol} in ${result.processingTime.toFixed(2)}ms`);
-                
+        // Use Web Worker for calculations
+        if (!isCalculating) {
+          setIsCalculating(true);
+          
+          // Get current price and volume histories
+          const currentPriceHistory = [...priceHistory, price].slice(-100);
+          const currentVolumeHistory = [...volumeHistory, volume].slice(-100);
+          
+          console.log(`🔢 Sending to worker: ${currentPriceHistory.length} prices, ${currentVolumeHistory.length} volumes for ${symbol}`);
+          
+          workerManager.calculateIndicators(
+            symbol,
+            currentPriceHistory,
+            currentVolumeHistory,
+            price,
+            (result) => {
+              console.log(`⚡ Worker calculated indicators for ${symbol} in ${result.processingTime.toFixed(2)}ms:`, result.indicators);
+              
+              if (result.indicators) {
                 const displayIndicators = formatIndicators(result.indicators, price, delay);
                 setIndicators(displayIndicators);
                 setIndicatorValues(result.indicators);
                 setLastUpdate(new Date().toLocaleTimeString());
-                setIsCalculating(false);
+              } else {
+                console.error(`❌ No indicators returned from worker for ${symbol}`);
               }
-            );
-          }
+              setIsCalculating(false);
+            }
+          );
         }
+      } else {
+        console.warn(`⚠️ Invalid price data for ${symbol}: price=${price}, volume=${volume}`);
       }
     };
 
@@ -104,131 +129,139 @@ const TradingPairTab = ({ symbol, isActive }: TradingPairTabProps) => {
   }, [symbol, isActive, priceHistory, volumeHistory, isCalculating]);
 
   const formatIndicators = (values: IndicatorValues, currentPrice: number, delay: number): IndicatorDisplay[] => {
+    // Add safety checks for undefined values
+    if (!values) {
+      console.error('❌ formatIndicators received undefined values');
+      return [];
+    }
+
+    console.log(`📋 Formatting indicators for ${symbol}:`, values);
+
     return [
       {
         name: 'Current Price',
-        value: `$${values.price.toFixed(4)}`,
+        value: `$${(values.price || 0).toFixed(4)}`,
         isMatch: true,
         delay
       },
       {
         name: 'RSI',
-        value: values.rsi.toFixed(2),
-        isMatch: checkIndicatorMatch('RSI', values.rsi, currentPrice),
+        value: (values.rsi || 0).toFixed(2),
+        isMatch: checkIndicatorMatch('RSI', values.rsi || 0, currentPrice),
         delay
       },
       {
         name: 'MACD Line',
-        value: values.macd.line.toFixed(6),
-        isMatch: checkIndicatorMatch('MACD Line', values.macd.line, currentPrice),
+        value: (values.macd?.line || 0).toFixed(6),
+        isMatch: checkIndicatorMatch('MACD Line', values.macd?.line || 0, currentPrice),
         delay
       },
       {
         name: 'MACD Signal',
-        value: values.macd.signal.toFixed(6),
-        isMatch: values.macd.line > values.macd.signal,
+        value: (values.macd?.signal || 0).toFixed(6),
+        isMatch: (values.macd?.line || 0) > (values.macd?.signal || 0),
         delay
       },
       {
         name: '5 EMA',
-        value: values.ma5.toFixed(4),
-        isMatch: checkIndicatorMatch('5 EMA', values.ma5, currentPrice),
+        value: (values.ma5 || 0).toFixed(4),
+        isMatch: checkIndicatorMatch('5 EMA', values.ma5 || 0, currentPrice),
         delay
       },
       {
         name: '8 EMA',
-        value: values.ma8.toFixed(4),
-        isMatch: checkIndicatorMatch('8 EMA', values.ma8, currentPrice),
+        value: (values.ma8 || 0).toFixed(4),
+        isMatch: checkIndicatorMatch('8 EMA', values.ma8 || 0, currentPrice),
         delay
       },
       {
         name: '13 EMA',
-        value: values.ma13.toFixed(4),
-        isMatch: checkIndicatorMatch('13 EMA', values.ma13, currentPrice),
+        value: (values.ma13 || 0).toFixed(4),
+        isMatch: checkIndicatorMatch('13 EMA', values.ma13 || 0, currentPrice),
         delay
       },
       {
         name: '20 EMA',
-        value: values.ma20.toFixed(4),
-        isMatch: checkIndicatorMatch('20 EMA', values.ma20, currentPrice),
+        value: (values.ma20 || 0).toFixed(4),
+        isMatch: checkIndicatorMatch('20 EMA', values.ma20 || 0, currentPrice),
         delay
       },
       {
         name: '21 EMA',
-        value: values.ma21.toFixed(4),
-        isMatch: checkIndicatorMatch('21 EMA', values.ma21, currentPrice),
+        value: (values.ma21 || 0).toFixed(4),
+        isMatch: checkIndicatorMatch('21 EMA', values.ma21 || 0, currentPrice),
         delay
       },
       {
         name: '34 EMA',
-        value: values.ma34.toFixed(4),
-        isMatch: checkIndicatorMatch('34 EMA', values.ma34, currentPrice),
+        value: (values.ma34 || 0).toFixed(4),
+        isMatch: checkIndicatorMatch('34 EMA', values.ma34 || 0, currentPrice),
         delay
       },
       {
         name: '50 EMA',
-        value: values.ma50.toFixed(4),
-        isMatch: checkIndicatorMatch('50 EMA', values.ma50, currentPrice),
+        value: (values.ma50 || 0).toFixed(4),
+        isMatch: checkIndicatorMatch('50 EMA', values.ma50 || 0, currentPrice),
         delay
       },
       {
         name: 'Bollinger Upper',
-        value: values.bollingerUpper.toFixed(4),
-        isMatch: currentPrice <= values.bollingerUpper,
+        value: (values.bollingerUpper || 0).toFixed(4),
+        isMatch: currentPrice <= (values.bollingerUpper || 0),
         delay
       },
       {
         name: 'Bollinger Lower',
-        value: values.bollingerLower.toFixed(4),
-        isMatch: currentPrice >= values.bollingerLower,
+        value: (values.bollingerLower || 0).toFixed(4),
+        isMatch: currentPrice >= (values.bollingerLower || 0),
         delay
       },
       {
         name: 'Bollinger Middle',
-        value: values.bollingerMiddle.toFixed(4),
-        isMatch: Math.abs(currentPrice - values.bollingerMiddle) / currentPrice <= 0.01,
+        value: (values.bollingerMiddle || 0).toFixed(4),
+        isMatch: Math.abs(currentPrice - (values.bollingerMiddle || 0)) / currentPrice <= 0.01,
         delay
       },
       {
         name: 'Volume',
-        value: values.volume.toLocaleString(),
-        isMatch: values.volume > 0,
+        value: (values.volume || 0).toLocaleString(),
+        isMatch: (values.volume || 0) > 0,
         delay
       },
       {
         name: 'Avg Volume',
-        value: values.avgVolume.toLocaleString(),
+        value: (values.avgVolume || 0).toLocaleString(),
         isMatch: true,
         delay
       },
       {
         name: 'Volume Spike',
         value: values.volumeSpike ? 'YES' : 'NO',
-        isMatch: values.volumeSpike,
+        isMatch: values.volumeSpike || false,
         delay
       },
       {
         name: 'Open Interest',
-        value: values.openInterest.toLocaleString(),
-        isMatch: checkIndicatorMatch('Open Interest', values.openInterest, currentPrice),
+        value: (values.openInterest || 0).toLocaleString(),
+        isMatch: checkIndicatorMatch('Open Interest', values.openInterest || 0, currentPrice),
         delay
       },
       {
         name: 'CVD',
-        value: values.cvd.toLocaleString(),
-        isMatch: checkIndicatorMatch('CVD', values.cvd, currentPrice),
+        value: (values.cvd || 0).toLocaleString(),
+        isMatch: checkIndicatorMatch('CVD', values.cvd || 0, currentPrice),
         delay
       },
       {
         name: 'CVD Trend',
-        value: values.cvdTrend.toUpperCase(),
-        isMatch: values.cvdTrend === 'bullish',
+        value: (values.cvdTrend || 'neutral').toUpperCase(),
+        isMatch: (values.cvdTrend || 'neutral') === 'bullish',
         delay
       },
       {
         name: 'CVD Slope',
-        value: values.cvdSlope.toFixed(2),
-        isMatch: values.cvdSlope > 0,
+        value: (values.cvdSlope || 0).toFixed(2),
+        isMatch: (values.cvdSlope || 0) > 0,
         delay
       }
     ];

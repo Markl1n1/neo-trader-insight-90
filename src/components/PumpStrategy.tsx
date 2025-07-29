@@ -10,6 +10,16 @@ interface PumpStrategyProps {
 }
 
 const PumpStrategy = ({ symbol, currentPrice, indicators }: PumpStrategyProps) => {
+  // Add safety checks for indicators
+  if (!indicators) {
+    console.error('❌ PumpStrategy received undefined indicators');
+    return (
+      <div className="p-4 neo-border rounded-lg bg-card/50">
+        <p className="text-muted-foreground">Loading indicator data...</p>
+      </div>
+    );
+  }
+
   // Revised pump mode strategy conditions
   const checkPumpConditions = () => {
     const entryPrice = currentPrice;
@@ -17,22 +27,22 @@ const PumpStrategy = ({ symbol, currentPrice, indicators }: PumpStrategyProps) =
     const stopLoss = entryPrice * 0.99; // -1% stop loss
     
     // Step 1: Volume (> AvgVolume × 2.5)
-    const volumeCondition = indicators.volume > indicators.avgVolume * 2.5;
+    const volumeCondition = (indicators.volume || 0) > (indicators.avgVolume || 0) * 2.5;
     
     // Step 2: RSI (50 < RSI < 85)
-    const rsiCondition = indicators.rsi > 50 && indicators.rsi < 85;
+    const rsiCondition = (indicators.rsi || 0) > 50 && (indicators.rsi || 0) < 85;
     
     // Step 3: Moving Averages (Price > EMA13 AND EMA5 > EMA13)
-    const maCondition = currentPrice > indicators.ma13 && indicators.ma5 > indicators.ma13;
+    const maCondition = currentPrice > (indicators.ma13 || 0) && (indicators.ma5 || 0) > (indicators.ma13 || 0);
     
     // Step 4: MACD (MACD Line > Signal AND MACD Line > 0)
-    const macdCondition = indicators.macd.line > indicators.macd.signal && indicators.macd.line > 0;
+    const macdCondition = (indicators.macd?.line || 0) > (indicators.macd?.signal || 0) && (indicators.macd?.line || 0) > 0;
     
     // Step 5: CVD (> 0 with slope > 0, last 3-5 candles)
-    const cvdCondition = indicators.cvd > 0 && indicators.cvdSlope > 0;
+    const cvdCondition = (indicators.cvd || 0) > 0 && (indicators.cvdSlope || 0) > 0;
     
     // Step 6: Price breakout above Bollinger Middle
-    const bollingerCondition = currentPrice > indicators.bollingerMiddle;
+    const bollingerCondition = currentPrice > (indicators.bollingerMiddle || 0);
     
     const conditions = {
       volume: volumeCondition,
@@ -70,22 +80,22 @@ const PumpStrategy = ({ symbol, currentPrice, indicators }: PumpStrategyProps) =
       takeProfit: strategy.takeProfit,
       stopLoss: strategy.stopLoss,
       indicators: {
-        rsi: indicators.rsi,
-        macd: indicators.macd,
-        ma5: indicators.ma5,
-        ma8: indicators.ma8,
-        ma13: indicators.ma13,
-        ma20: indicators.ma20,
-        ma21: indicators.ma21,
-        ma34: indicators.ma34,
-        ma50: indicators.ma50,
-        bollingerUpper: indicators.bollingerUpper,
-        bollingerLower: indicators.bollingerLower,
+        rsi: indicators.rsi || 0,
+        macd: indicators.macd || { macd: 0, signal: 0, line: 0 },
+        ma5: indicators.ma5 || 0,
+        ma8: indicators.ma8 || 0,
+        ma13: indicators.ma13 || 0,
+        ma20: indicators.ma20 || 0,
+        ma21: indicators.ma21 || 0,
+        ma34: indicators.ma34 || 0,
+        ma50: indicators.ma50 || 0,
+        bollingerUpper: indicators.bollingerUpper || 0,
+        bollingerLower: indicators.bollingerLower || 0,
         currentPrice,
-        volume: indicators.volume,
-        volumeSpike: indicators.volumeSpike,
-        cvd: indicators.cvd,
-        cvdTrend: indicators.cvdTrend
+        volume: indicators.volume || 0,
+        volumeSpike: indicators.volumeSpike || false,
+        cvd: indicators.cvd || 0,
+        cvdTrend: indicators.cvdTrend || 'neutral'
       },
       conditions: strategy.conditions,
       active: true
@@ -104,7 +114,7 @@ const PumpStrategy = ({ symbol, currentPrice, indicators }: PumpStrategyProps) =
           <div className={`p-3 rounded-lg ${strategy.conditions.volume ? 'bg-green-500/20' : 'bg-red-500/20'}`}>
             <div className="flex justify-between items-center">
               <span className="font-medium">Volume &gt; 2.5x Avg</span>
-              <span className="font-mono">{indicators.volume.toLocaleString()} / {indicators.avgVolume.toLocaleString()}</span>
+              <span className="font-mono">{(indicators.volume || 0).toLocaleString()} / {(indicators.avgVolume || 0).toLocaleString()}</span>
               <span className={`px-2 py-1 rounded text-xs font-medium ${
                 strategy.conditions.volume ? 'bg-green-500/30 text-green-400' : 'bg-red-500/30 text-red-400'
               }`}>
@@ -117,7 +127,7 @@ const PumpStrategy = ({ symbol, currentPrice, indicators }: PumpStrategyProps) =
           <div className={`p-3 rounded-lg ${strategy.conditions.rsi ? 'bg-green-500/20' : 'bg-red-500/20'}`}>
             <div className="flex justify-between items-center">
               <span className="font-medium">RSI (50-85)</span>
-              <span className="font-mono">{indicators.rsi.toFixed(2)}</span>
+              <span className="font-mono">{(indicators.rsi || 0).toFixed(2)}</span>
               <span className={`px-2 py-1 rounded text-xs font-medium ${
                 strategy.conditions.rsi ? 'bg-green-500/30 text-green-400' : 'bg-red-500/30 text-red-400'
               }`}>
@@ -130,7 +140,7 @@ const PumpStrategy = ({ symbol, currentPrice, indicators }: PumpStrategyProps) =
           <div className={`p-3 rounded-lg ${strategy.conditions.movingAverages ? 'bg-green-500/20' : 'bg-red-500/20'}`}>
             <div className="flex justify-between items-center">
               <span className="font-medium">Price &gt; EMA13 &amp; EMA5 &gt; EMA13</span>
-              <span className="font-mono">{currentPrice.toFixed(4)} / {indicators.ma13.toFixed(4)} / {indicators.ma5.toFixed(4)}</span>
+              <span className="font-mono">{currentPrice.toFixed(4)} / {(indicators.ma13 || 0).toFixed(4)} / {(indicators.ma5 || 0).toFixed(4)}</span>
               <span className={`px-2 py-1 rounded text-xs font-medium ${
                 strategy.conditions.movingAverages ? 'bg-green-500/30 text-green-400' : 'bg-red-500/30 text-red-400'
               }`}>
@@ -143,7 +153,7 @@ const PumpStrategy = ({ symbol, currentPrice, indicators }: PumpStrategyProps) =
           <div className={`p-3 rounded-lg ${strategy.conditions.macd ? 'bg-green-500/20' : 'bg-red-500/20'}`}>
             <div className="flex justify-between items-center">
               <span className="font-medium">MACD Line &gt; Signal &amp; &gt; 0</span>
-              <span className="font-mono">{indicators.macd.line.toFixed(6)} / {indicators.macd.signal.toFixed(6)}</span>
+              <span className="font-mono">{(indicators.macd?.line || 0).toFixed(6)} / {(indicators.macd?.signal || 0).toFixed(6)}</span>
               <span className={`px-2 py-1 rounded text-xs font-medium ${
                 strategy.conditions.macd ? 'bg-green-500/30 text-green-400' : 'bg-red-500/30 text-red-400'
               }`}>
@@ -156,7 +166,7 @@ const PumpStrategy = ({ symbol, currentPrice, indicators }: PumpStrategyProps) =
           <div className={`p-3 rounded-lg ${strategy.conditions.cvd ? 'bg-green-500/20' : 'bg-red-500/20'}`}>
             <div className="flex justify-between items-center">
               <span className="font-medium">CVD &gt; 0 &amp; Slope &gt; 0 (3-5 candles)</span>
-              <span className="font-mono">{indicators.cvd.toLocaleString()} / Slope: {indicators.cvdSlope.toFixed(2)}</span>
+              <span className="font-mono">{(indicators.cvd || 0).toLocaleString()} / Slope: {(indicators.cvdSlope || 0).toFixed(2)}</span>
               <span className={`px-2 py-1 rounded text-xs font-medium ${
                 strategy.conditions.cvd ? 'bg-green-500/30 text-green-400' : 'bg-red-500/30 text-red-400'
               }`}>
@@ -169,7 +179,7 @@ const PumpStrategy = ({ symbol, currentPrice, indicators }: PumpStrategyProps) =
           <div className={`p-3 rounded-lg ${strategy.conditions.bollinger ? 'bg-green-500/20' : 'bg-red-500/20'}`}>
             <div className="flex justify-between items-center">
               <span className="font-medium">Price &gt; BB Middle</span>
-              <span className="font-mono">{currentPrice.toFixed(4)} &gt; {indicators.bollingerMiddle.toFixed(4)}</span>
+              <span className="font-mono">{currentPrice.toFixed(4)} &gt; {(indicators.bollingerMiddle || 0).toFixed(4)}</span>
               <span className={`px-2 py-1 rounded text-xs font-medium ${
                 strategy.conditions.bollinger ? 'bg-green-500/30 text-green-400' : 'bg-red-500/30 text-red-400'
               }`}>
