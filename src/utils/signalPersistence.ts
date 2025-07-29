@@ -1,4 +1,6 @@
 import { googleSheetsService } from '../services/googleSheetsService';
+import { indexedDBService } from '../services/indexedDbService';
+import { signalDebouncer } from './signalDebouncer';
 
 export interface TradingSignal {
   id: string;
@@ -38,37 +40,69 @@ export interface SignalHistory {
 class SignalPersistenceManager {
   private readonly storageKey = 'trading_signals';
   private readonly maxSignals = 1000;
+  private isIndexedDBReady = false;
+
+  constructor() {
+    this.initializeIndexedDB();
+  }
+
+  private async initializeIndexedDB(): Promise<void> {
+    try {
+      await indexedDBService.init();
+      await indexedDBService.migrateFromLocalStorage();
+      this.isIndexedDBReady = true;
+      console.log('✅ IndexedDB initialized and migration completed');
+    } catch (error) {
+      console.error('❌ IndexedDB initialization failed, falling back to localStorage:', error);
+      this.isIndexedDBReady = false;
+    }
+  }
 
   async saveSignal(signal: TradingSignal): Promise<void> {
-    const history = this.getSignalHistory();
-    
-    // Remove existing signal for same symbol/strategy if exists
-    history.signals = history.signals.filter(
-      s => !(s.symbol === signal.symbol && s.strategy === signal.strategy && s.active)
-    );
-    
-    // Add new signal
-    history.signals.unshift(signal);
-    
-    // Keep only the most recent signals
-    if (history.signals.length > this.maxSignals) {
-      history.signals = history.signals.slice(0, this.maxSignals);
+    // Apply debouncing to prevent duplicates
+    if (!signalDebouncer.shouldProcessSignal(signal.symbol, signal.strategy, signal.signal, signal.timestamp)) {
+      return;
     }
-    
-    history.lastUpdate = Date.now();
-    
-    localStorage.setItem(this.storageKey, JSON.stringify(history));
-    
-    console.log(`💾 Saved ${signal.signal} signal for ${signal.symbol} (${signal.strategy})`);
 
-    // Send to Google Sheets if configured
-    if (googleSheetsService.isConfigured()) {
-      try {
-        await googleSheetsService.appendSignalToSheet(signal);
-        console.log('📊 Signal sent to Google Sheets');
-      } catch (error) {
-        console.error('Failed to send signal to Google Sheets:', error);
+    try {
+      if (this.isIndexedDBReady) {
+        // Use IndexedDB
+        await indexedDBService.saveSignal(signal);
+      } else {
+        // Fallback to localStorage
+        const history = this.getSignalHistory();
+        
+        // Remove existing signal for same symbol/strategy if exists
+        history.signals = history.signals.filter(
+          s => !(s.symbol === signal.symbol && s.strategy === signal.strategy && s.active)
+        );
+        
+        // Add new signal
+        history.signals.unshift(signal);
+        
+        // Keep only the most recent signals
+        if (history.signals.length > this.maxSignals) {
+          history.signals = history.signals.slice(0, this.maxSignals);
+        }
+        
+        history.lastUpdate = Date.now();
+        localStorage.setItem(this.storageKey, JSON.stringify(history));
       }
+
+      console.log(`💾 Saved ${signal.signal} signal for ${signal.symbol} (${signal.strategy})`);
+
+      // Send to Google Sheets if configured
+      if (googleSheetsService.isConfigured()) {
+        try {
+          await googleSheetsService.appendSignalToSheet(signal);
+          console.log('📊 Signal sent to Google Sheets');
+        } catch (error) {
+          console.error('Failed to send signal to Google Sheets:', error);
+        }
+      }
+    } catch (error) {
+      console.error('Error saving signal:', error);
+      throw error;
     }
   }
 
@@ -85,52 +119,123 @@ class SignalPersistenceManager {
     return { signals: [], lastUpdate: Date.now() };
   }
 
-  getActiveSignals(): TradingSignal[] {
-    const history = this.getSignalHistory();
-    return history.signals.filter(signal => signal.active && !signal.executed);
-  }
-
-  getSignalsBySymbol(symbol: string): TradingSignal[] {
-    const history = this.getSignalHistory();
-    return history.signals.filter(signal => signal.symbol === symbol);
-  }
-
-  getSignalsByStrategy(strategy: string): TradingSignal[] {
-    const history = this.getSignalHistory();
-    return history.signals.filter(signal => signal.strategy === strategy);
-  }
-
-  deactivateSignal(signalId: string): void {
-    const history = this.getSignalHistory();
-    const signal = history.signals.find(s => s.id === signalId);
-    
-    if (signal) {
-      signal.active = false;
-      history.lastUpdate = Date.now();
-      localStorage.setItem(this.storageKey, JSON.stringify(history));
-      console.log(`🔕 Deactivated signal ${signalId}`);
+  async getActiveSignals(): Promise<TradingSignal[]> {
+    try {
+      if (this.isIndexedDBReady) {
+        return await indexedDBService.getActiveSignals();
+      } else {
+        const history = this.getSignalHistory();
+        return history.signals.filter(signal => signal.active && !signal.executed);
+      }
+    } catch (error) {
+      console.error('Error getting active signals:', error);
+      return [];
     }
   }
 
-  markSignalExecuted(signalId: string, executionPrice: number): void {
-    const history = this.getSignalHistory();
-    const signal = history.signals.find(s => s.id === signalId);
-    
-    if (signal) {
-      signal.executed = true;
-      signal.executedAt = Date.now();
-      signal.active = false;
-      
-      // Calculate P&L based on signal type
-      if (signal.signal === 'LONG') {
-        signal.pnl = executionPrice - signal.entryPrice;
-      } else if (signal.signal === 'SHORT') {
-        signal.pnl = signal.entryPrice - executionPrice;
+  async getSignalsBySymbol(symbol: string): Promise<TradingSignal[]> {
+    try {
+      if (this.isIndexedDBReady) {
+        const allSignals = await indexedDBService.getSignals();
+        return allSignals.filter(signal => signal.symbol === symbol);
+      } else {
+        const history = this.getSignalHistory();
+        return history.signals.filter(signal => signal.symbol === symbol);
       }
-      
-      history.lastUpdate = Date.now();
-      localStorage.setItem(this.storageKey, JSON.stringify(history));
-      console.log(`✅ Marked signal ${signalId} as executed at ${executionPrice}`);
+    } catch (error) {
+      console.error('Error getting signals by symbol:', error);
+      return [];
+    }
+  }
+
+  async getSignalsByStrategy(strategy: string): Promise<TradingSignal[]> {
+    try {
+      if (this.isIndexedDBReady) {
+        const allSignals = await indexedDBService.getSignals();
+        return allSignals.filter(signal => signal.strategy === strategy);
+      } else {
+        const history = this.getSignalHistory();
+        return history.signals.filter(signal => signal.strategy === strategy);
+      }
+    } catch (error) {
+      console.error('Error getting signals by strategy:', error);
+      return [];
+    }
+  }
+
+  async deactivateSignal(signalId: string): Promise<void> {
+    try {
+      if (this.isIndexedDBReady) {
+        const signals = await indexedDBService.getSignals();
+        const signal = signals.find(s => s.id === signalId);
+        
+        if (signal) {
+          signal.active = false;
+          await indexedDBService.updateSignal(signal);
+          console.log(`🔕 Deactivated signal ${signalId}`);
+        }
+      } else {
+        const history = this.getSignalHistory();
+        const signal = history.signals.find(s => s.id === signalId);
+        
+        if (signal) {
+          signal.active = false;
+          history.lastUpdate = Date.now();
+          localStorage.setItem(this.storageKey, JSON.stringify(history));
+          console.log(`🔕 Deactivated signal ${signalId}`);
+        }
+      }
+    } catch (error) {
+      console.error('Error deactivating signal:', error);
+      throw error;
+    }
+  }
+
+  async markSignalExecuted(signalId: string, executionPrice: number): Promise<void> {
+    try {
+      if (this.isIndexedDBReady) {
+        const signals = await indexedDBService.getSignals();
+        const signal = signals.find(s => s.id === signalId);
+        
+        if (signal) {
+          signal.executed = true;
+          signal.executedAt = Date.now();
+          signal.active = false;
+          
+          // Calculate P&L based on signal type
+          if (signal.signal === 'LONG') {
+            signal.pnl = executionPrice - signal.entryPrice;
+          } else if (signal.signal === 'SHORT') {
+            signal.pnl = signal.entryPrice - executionPrice;
+          }
+          
+          await indexedDBService.updateSignal(signal);
+          console.log(`✅ Marked signal ${signalId} as executed at ${executionPrice}`);
+        }
+      } else {
+        const history = this.getSignalHistory();
+        const signal = history.signals.find(s => s.id === signalId);
+        
+        if (signal) {
+          signal.executed = true;
+          signal.executedAt = Date.now();
+          signal.active = false;
+          
+          // Calculate P&L based on signal type
+          if (signal.signal === 'LONG') {
+            signal.pnl = executionPrice - signal.entryPrice;
+          } else if (signal.signal === 'SHORT') {
+            signal.pnl = signal.entryPrice - executionPrice;
+          }
+          
+          history.lastUpdate = Date.now();
+          localStorage.setItem(this.storageKey, JSON.stringify(history));
+          console.log(`✅ Marked signal ${signalId} as executed at ${executionPrice}`);
+        }
+      }
+    } catch (error) {
+      console.error('Error marking signal as executed:', error);
+      throw error;
     }
   }
 
@@ -138,14 +243,42 @@ class SignalPersistenceManager {
     return `${symbol}_${strategy}_${timestamp}`;
   }
 
-  clearHistory(): void {
-    localStorage.removeItem(this.storageKey);
-    console.log('🗑️ Cleared signal history');
+  async clearHistory(): Promise<void> {
+    try {
+      if (this.isIndexedDBReady) {
+        await indexedDBService.clearAllSignals();
+      }
+      localStorage.removeItem(this.storageKey);
+      console.log('🗑️ Cleared signal history');
+    } catch (error) {
+      console.error('Error clearing history:', error);
+      throw error;
+    }
   }
 
-  exportHistory(): string {
-    const history = this.getSignalHistory();
-    return JSON.stringify(history, null, 2);
+  async exportHistory(): Promise<string> {
+    try {
+      let signals: TradingSignal[] = [];
+      
+      if (this.isIndexedDBReady) {
+        signals = await indexedDBService.getSignals();
+      } else {
+        const history = this.getSignalHistory();
+        signals = history.signals;
+      }
+
+      const exportData = {
+        signals,
+        lastUpdate: Date.now(),
+        exportedAt: new Date().toISOString(),
+        totalSignals: signals.length
+      };
+
+      return JSON.stringify(exportData, null, 2);
+    } catch (error) {
+      console.error('Error exporting history:', error);
+      throw error;
+    }
   }
 }
 

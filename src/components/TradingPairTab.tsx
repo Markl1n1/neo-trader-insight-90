@@ -1,7 +1,10 @@
 import { useEffect, useState } from 'react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { binanceWS } from '../services/binanceWebSocket';
-import { indicatorCalculator, checkIndicatorMatch, type IndicatorValues } from '../utils/indicators';
+import { checkIndicatorMatch, type IndicatorValues } from '../utils/indicators';
+import { workerManager } from '../services/workerManager';
+import { memoryManager } from '../utils/memoryManager';
+import ErrorBoundary from './ErrorBoundary';
 import ScalpingStrategy from './ScalpingStrategy';
 import IntradayStrategy from './IntradayStrategy';
 import PumpStrategy from './PumpStrategy';
@@ -25,6 +28,9 @@ const TradingPairTab = ({ symbol, isActive }: TradingPairTabProps) => {
   const [lastUpdate, setLastUpdate] = useState<string>('');
   const [connectionStatus, setConnectionStatus] = useState<string>('Connecting to Futures...');
   const [activeStrategyTab, setActiveStrategyTab] = useState('indicators');
+  const [priceHistory, setPriceHistory] = useState<number[]>([]);
+  const [volumeHistory, setVolumeHistory] = useState<number[]>([]);
+  const [isCalculating, setIsCalculating] = useState(false);
 
   useEffect(() => {
     if (!isActive) return;
@@ -42,30 +48,48 @@ const TradingPairTab = ({ symbol, isActive }: TradingPairTabProps) => {
         const volume = parseFloat(data.v || data.volume || '0');
         const delay = data.delay || 0;
         
-        const openInterest = volume * 0.1;
-        
-        console.log(`💰 Processing FUTURES price: ${price}, volume: ${volume}, OI: ${openInterest} for ${symbol} (${delay}ms delay)`);
-        
         if (price > 0) {
-          indicatorCalculator.updatePrice(symbol, price, volume, openInterest);
-          
-          const indicatorValues = indicatorCalculator.getIndicatorValues(symbol);
-          console.log(`📈 Calculated futures indicators for ${symbol}:`, indicatorValues);
-          
-          const displayIndicators = formatIndicators(indicatorValues, price, delay);
-          
-          setIndicators(displayIndicators);
-          setIndicatorValues(indicatorValues);
-          setLastUpdate(new Date().toLocaleTimeString());
-        } else {
-          console.warn(`⚠️ Invalid futures price data for ${symbol}:`, data);
+          // Update price and volume history
+          setPriceHistory(prev => {
+            const newHistory = [...prev, price];
+            return newHistory.length > 100 ? newHistory.slice(-100) : newHistory;
+          });
+
+          setVolumeHistory(prev => {
+            const newHistory = [...prev, volume];
+            return newHistory.length > 100 ? newHistory.slice(-100) : newHistory;
+          });
+
+          // Use Web Worker for calculations
+          if (!isCalculating) {
+            setIsCalculating(true);
+            workerManager.calculateIndicators(
+              symbol,
+              [...priceHistory, price].slice(-100),
+              [...volumeHistory, volume].slice(-100),
+              price,
+              (result) => {
+                console.log(`⚡ Worker calculated indicators for ${symbol} in ${result.processingTime.toFixed(2)}ms`);
+                
+                const displayIndicators = formatIndicators(result.indicators, price, delay);
+                setIndicators(displayIndicators);
+                setIndicatorValues(result.indicators);
+                setLastUpdate(new Date().toLocaleTimeString());
+                setIsCalculating(false);
+              }
+            );
+          }
         }
-      } else if (data.type === 'kline_1m') {
-        console.log(`📊 Received futures kline data for ${symbol}`);
       }
     };
 
+    // Subscribe to WebSocket data
     binanceWS.subscribe(symbol, handleData);
+    
+    // Register cleanup with memory manager
+    memoryManager.addSubscription(`${symbol}_ws`, () => {
+      binanceWS.unsubscribe(symbol);
+    });
 
     const connectionTimeout = setTimeout(() => {
       if (indicators.length === 0) {
@@ -75,9 +99,9 @@ const TradingPairTab = ({ symbol, isActive }: TradingPairTabProps) => {
 
     return () => {
       clearTimeout(connectionTimeout);
-      binanceWS.unsubscribe(symbol);
+      memoryManager.removeSubscription(`${symbol}_ws`);
     };
-  }, [symbol, isActive]);
+  }, [symbol, isActive, priceHistory, volumeHistory, isCalculating]);
 
   const formatIndicators = (values: IndicatorValues, currentPrice: number, delay: number): IndicatorDisplay[] => {
     return [
@@ -183,100 +207,114 @@ const TradingPairTab = ({ symbol, isActive }: TradingPairTabProps) => {
   if (!isActive) return null;
 
   return (
-    <div className="space-y-4">
-      <div className="flex justify-between items-center mb-6">
-        <h2 className="text-2xl font-bold text-primary neo-glow">
-          {symbol}
-        </h2>
-        <div className="text-sm text-muted-foreground">
-          Status: {connectionStatus} | Last Update: {lastUpdate || 'Never'}
+    <ErrorBoundary>
+      <div className="space-y-4">
+        <div className="flex justify-between items-center mb-6">
+          <h2 className="text-2xl font-bold text-primary neo-glow">
+            {symbol}
+          </h2>
+          <div className="text-sm text-muted-foreground flex gap-4">
+            <span>Status: {connectionStatus}</span>
+            <span>Last Update: {lastUpdate || 'Never'}</span>
+            {isCalculating && <span className="text-yellow-500">⚡ Calculating...</span>}
+          </div>
         </div>
-      </div>
 
-      <Tabs value={activeStrategyTab} onValueChange={setActiveStrategyTab} className="w-full">
-        <TabsList className="grid w-full grid-cols-5 mb-6 bg-card/50 neo-border p-1">
-          <TabsTrigger value="indicators">Indicators</TabsTrigger>
-          <TabsTrigger value="scalping">Scalping</TabsTrigger>
-          <TabsTrigger value="intraday">Intraday</TabsTrigger>
-          <TabsTrigger value="pump">Pump Mode</TabsTrigger>
-          <TabsTrigger value="signals">Signals</TabsTrigger>
-        </TabsList>
+        <Tabs value={activeStrategyTab} onValueChange={setActiveStrategyTab} className="w-full">
+          <TabsList className="grid w-full grid-cols-5 mb-6 bg-card/50 neo-border p-1">
+            <TabsTrigger value="indicators">Indicators</TabsTrigger>
+            <TabsTrigger value="scalping">Scalping</TabsTrigger>
+            <TabsTrigger value="intraday">Intraday</TabsTrigger>
+            <TabsTrigger value="pump">Pump Mode</TabsTrigger>
+            <TabsTrigger value="signals">Signals</TabsTrigger>
+          </TabsList>
 
-        <TabsContent value="indicators" className="mt-0">
-          <div className="grid gap-3">
-            <div className="grid grid-cols-3 gap-4 p-4 neo-border rounded-lg bg-card/50">
-              <div className="font-semibold text-primary">Indicator</div>
-              <div className="font-semibold text-primary">Value</div>
-              <div className="font-semibold text-primary">Delay (ms)</div>
-            </div>
-
-            {indicators.map((indicator, index) => (
-              <div
-                key={index}
-                className={`grid grid-cols-3 gap-4 p-4 rounded-lg transition-all duration-300 ${
-                  indicator.isMatch ? 'indicator-positive' : 'indicator-negative'
-                }`}
-              >
-                <div className="font-medium text-foreground">
-                  {indicator.name}
-                </div>
-                <div className="font-mono text-foreground font-bold">
-                  {indicator.value}
-                </div>
-                <div className="font-mono text-foreground">
-                  {indicator.delay}ms
-                </div>
+          <TabsContent value="indicators" className="mt-0">
+            <div className="grid gap-3">
+              <div className="grid grid-cols-3 gap-4 p-4 neo-border rounded-lg bg-card/50">
+                <div className="font-semibold text-primary">Indicator</div>
+                <div className="font-semibold text-primary">Value</div>
+                <div className="font-semibold text-primary">Delay (ms)</div>
               </div>
-            ))}
+
+              {indicators.map((indicator, index) => (
+                <div
+                  key={index}
+                  className={`grid grid-cols-3 gap-4 p-4 rounded-lg transition-all duration-300 ${
+                    indicator.isMatch ? 'indicator-positive' : 'indicator-negative'
+                  }`}
+                >
+                  <div className="font-medium text-foreground">
+                    {indicator.name}
+                  </div>
+                  <div className="font-mono text-foreground font-bold">
+                    {indicator.value}
+                  </div>
+                  <div className="font-mono text-foreground">
+                    {indicator.delay}ms
+                  </div>
+                </div>
+              ))}
+            </div>
+          </TabsContent>
+
+          <TabsContent value="scalping" className="mt-0">
+            <ErrorBoundary>
+              {indicatorValues && (
+                <ScalpingStrategy 
+                  symbol={symbol}
+                  currentPrice={indicatorValues.price}
+                  indicators={indicatorValues}
+                />
+              )}
+            </ErrorBoundary>
+          </TabsContent>
+
+          <TabsContent value="intraday" className="mt-0">
+            <ErrorBoundary>
+              {indicatorValues && (
+                <IntradayStrategy 
+                  symbol={symbol}
+                  currentPrice={indicatorValues.price}
+                  indicators={indicatorValues}
+                />
+              )}
+            </ErrorBoundary>
+          </TabsContent>
+
+          <TabsContent value="pump" className="mt-0">
+            <ErrorBoundary>
+              {indicatorValues && (
+                <PumpStrategy 
+                  symbol={symbol}
+                  currentPrice={indicatorValues.price}
+                  indicators={indicatorValues}
+                />
+              )}
+            </ErrorBoundary>
+          </TabsContent>
+
+          <TabsContent value="signals" className="mt-0">
+            <ErrorBoundary>
+              <SignalHistory />
+            </ErrorBoundary>
+          </TabsContent>
+        </Tabs>
+
+        {indicators.length === 0 && (
+          <div className="flex items-center justify-center p-8 neo-border rounded-lg">
+            <div className="text-center">
+              <div className="animate-spin w-8 h-8 border-2 border-primary border-t-transparent rounded-full mx-auto mb-4"></div>
+              <p className="text-muted-foreground">{connectionStatus}</p>
+              <p className="text-sm text-muted-foreground mt-2">Loading {symbol} data</p>
+              <p className="text-xs text-muted-foreground mt-2">
+                {isCalculating ? 'Worker calculating indicators...' : 'Check browser console for detailed logs'}
+              </p>
+            </div>
           </div>
-        </TabsContent>
-
-        <TabsContent value="scalping" className="mt-0">
-          {indicatorValues && (
-            <ScalpingStrategy 
-              symbol={symbol}
-              currentPrice={indicatorValues.price}
-              indicators={indicatorValues}
-            />
-          )}
-        </TabsContent>
-
-        <TabsContent value="intraday" className="mt-0">
-          {indicatorValues && (
-            <IntradayStrategy 
-              symbol={symbol}
-              currentPrice={indicatorValues.price}
-              indicators={indicatorValues}
-            />
-          )}
-        </TabsContent>
-
-        <TabsContent value="pump" className="mt-0">
-          {indicatorValues && (
-            <PumpStrategy 
-              symbol={symbol}
-              currentPrice={indicatorValues.price}
-              indicators={indicatorValues}
-            />
-          )}
-        </TabsContent>
-
-        <TabsContent value="signals" className="mt-0">
-          <SignalHistory />
-        </TabsContent>
-      </Tabs>
-
-      {indicators.length === 0 && (
-        <div className="flex items-center justify-center p-8 neo-border rounded-lg">
-          <div className="text-center">
-            <div className="animate-spin w-8 h-8 border-2 border-primary border-t-transparent rounded-full mx-auto mb-4"></div>
-            <p className="text-muted-foreground">{connectionStatus}</p>
-            <p className="text-sm text-muted-foreground mt-2">Loading {symbol} data</p>
-            <p className="text-xs text-muted-foreground mt-2">Check browser console for detailed logs</p>
-          </div>
-        </div>
-      )}
-    </div>
+        )}
+      </div>
+    </ErrorBoundary>
   );
 };
 
