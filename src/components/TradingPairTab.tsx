@@ -136,9 +136,33 @@ const TradingPairTab = ({ symbol, isActive }: TradingPairTabProps) => {
         delay
       },
       {
+        name: '8 EMA',
+        value: values.ma8.toFixed(4),
+        isMatch: checkIndicatorMatch('8 EMA', values.ma8, currentPrice),
+        delay
+      },
+      {
+        name: '13 EMA',
+        value: values.ma13.toFixed(4),
+        isMatch: checkIndicatorMatch('13 EMA', values.ma13, currentPrice),
+        delay
+      },
+      {
         name: '20 EMA',
         value: values.ma20.toFixed(4),
         isMatch: checkIndicatorMatch('20 EMA', values.ma20, currentPrice),
+        delay
+      },
+      {
+        name: '21 EMA',
+        value: values.ma21.toFixed(4),
+        isMatch: checkIndicatorMatch('21 EMA', values.ma21, currentPrice),
+        delay
+      },
+      {
+        name: '34 EMA',
+        value: values.ma34.toFixed(4),
+        isMatch: checkIndicatorMatch('34 EMA', values.ma34, currentPrice),
         delay
       },
       {
@@ -199,6 +223,12 @@ const TradingPairTab = ({ symbol, isActive }: TradingPairTabProps) => {
         name: 'CVD Trend',
         value: values.cvdTrend.toUpperCase(),
         isMatch: values.cvdTrend === 'bullish',
+        delay
+      },
+      {
+        name: 'CVD Slope',
+        value: values.cvdSlope.toFixed(2),
+        isMatch: values.cvdSlope > 0,
         delay
       }
     ];

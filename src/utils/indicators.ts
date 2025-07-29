@@ -2,18 +2,23 @@ export interface IndicatorValues {
   rsi: number;
   macd: { macd: number; signal: number; line: number };
   ma5: number;
+  ma8: number; // New EMA8
+  ma13: number; // New EMA13
   ma20: number;
-  ma50: number; // Added 50 EMA
+  ma21: number; // New EMA21
+  ma34: number; // New EMA34
+  ma50: number;
   bollingerUpper: number;
   bollingerLower: number;
   bollingerMiddle: number;
   volume: number;
-  avgVolume: number; // For volume spike detection
-  volumeSpike: boolean; // Enhanced volume spike detection
+  avgVolume: number;
+  volumeSpike: boolean;
   price: number;
   openInterest: number;
   cvd: number;
-  cvdTrend: 'bullish' | 'bearish' | 'neutral'; // Enhanced CVD analysis
+  cvdTrend: 'bullish' | 'bearish' | 'neutral';
+  cvdSlope: number; // New CVD slope
 }
 
 export interface IndicatorPresets {
@@ -191,6 +196,29 @@ export class IndicatorCalculator {
     return { avgVolume, volumeSpike };
   }
 
+  // New method to calculate CVD slope over specified periods
+  calculateCVDSlope(symbol: string, lookbackPeriod: number = 5): number {
+    const cvdValues = this.cvdHistory.get(symbol) || [];
+    if (cvdValues.length < lookbackPeriod + 1) return 0;
+
+    const recentCVD = cvdValues.slice(-lookbackPeriod - 1);
+    if (recentCVD.length < 2) return 0;
+
+    // Calculate linear regression slope
+    const n = recentCVD.length;
+    let sumX = 0, sumY = 0, sumXY = 0, sumX2 = 0;
+
+    for (let i = 0; i < n; i++) {
+      sumX += i;
+      sumY += recentCVD[i];
+      sumXY += i * recentCVD[i];
+      sumX2 += i * i;
+    }
+
+    const slope = (n * sumXY - sumX * sumY) / (n * sumX2 - sumX * sumX);
+    return slope;
+  }
+
   // Enhanced CVD trend analysis
   calculateCVDTrend(symbol: string, lookbackPeriod: number = 10): 'bullish' | 'bearish' | 'neutral' {
     const cvdValues = this.cvdHistory.get(symbol) || [];
@@ -233,17 +261,26 @@ export class IndicatorCalculator {
     const rsi = this.calculateRSI(symbol);
     const macd = this.calculateMACD(symbol);
     const ma5 = this.calculateMovingAverage(symbol, 5);
+    const ma8 = this.calculateMovingAverage(symbol, 8);
+    const ma13 = this.calculateMovingAverage(symbol, 13);
     const ma20 = this.calculateMovingAverage(symbol, 20);
-    const ma50 = this.calculateMovingAverage(symbol, 50); // Added 50 EMA
+    const ma21 = this.calculateMovingAverage(symbol, 21);
+    const ma34 = this.calculateMovingAverage(symbol, 34);
+    const ma50 = this.calculateMovingAverage(symbol, 50);
     const bollinger = this.calculateBollingerBands(symbol);
     const volumeAnalysis = this.calculateVolumeSpike(symbol);
     const cvdTrend = this.calculateCVDTrend(symbol);
+    const cvdSlope = this.calculateCVDSlope(symbol);
 
     return {
       rsi,
       macd,
       ma5,
+      ma8,
+      ma13,
       ma20,
+      ma21,
+      ma34,
       ma50,
       bollingerUpper: bollinger.upper,
       bollingerLower: bollinger.lower,
@@ -254,7 +291,8 @@ export class IndicatorCalculator {
       price: currentPrice,
       openInterest: currentOpenInterest,
       cvd: currentCVD,
-      cvdTrend
+      cvdTrend,
+      cvdSlope
     };
   }
 }
