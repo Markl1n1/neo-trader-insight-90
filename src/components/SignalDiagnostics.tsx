@@ -34,7 +34,7 @@ const SignalDiagnostics = ({ symbol, indicators, currentPrice }: SignalDiagnosti
     const signal = {
       id: signalId,
       symbol,
-      strategy: strategy as const,
+      strategy: strategy,
       signal: 'LONG' as const,
       timestamp: Date.now(),
       entryPrice: currentPrice,
