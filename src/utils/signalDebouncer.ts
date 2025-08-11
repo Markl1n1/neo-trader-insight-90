@@ -9,10 +9,8 @@ interface PendingSignal {
 
 class SignalDebouncer {
   private pendingSignals: Map<string, PendingSignal> = new Map();
-  private readonly debounceTime = 2000; // Reduced to 2 seconds
-  private readonly duplicateWindow = 10000; // Reduced to 10 seconds
-  private blockedCount = 0;
-  private approvedCount = 0;
+  private readonly debounceTime = 5000; // 5 seconds
+  private readonly duplicateWindow = 30000; // 30 seconds
 
   private getSignalKey(symbol: string, strategy: string, signal: string): string {
     return `${symbol}_${strategy}_${signal}`;
@@ -24,8 +22,7 @@ class SignalDebouncer {
 
     // Check if there's a pending signal that's too recent
     if (pending && timestamp - pending.timestamp < this.duplicateWindow) {
-      this.blockedCount++;
-      console.log(`🚫 Duplicate signal blocked for ${symbol} ${strategy} ${signal} (${timestamp - pending.timestamp}ms ago)`);
+      console.log(`🚫 Duplicate signal blocked for ${symbol} ${strategy} ${signal}`);
       return false;
     }
 
@@ -47,22 +44,8 @@ class SignalDebouncer {
       timeoutId
     });
 
-    this.approvedCount++;
     console.log(`✅ Signal approved for ${symbol} ${strategy} ${signal}`);
     return true;
-  }
-
-  getStats(): { blockedCount: number; approvedCount: number; pendingSignals: number } {
-    return {
-      blockedCount: this.blockedCount,
-      approvedCount: this.approvedCount,
-      pendingSignals: this.pendingSignals.size
-    };
-  }
-
-  resetStats(): void {
-    this.blockedCount = 0;
-    this.approvedCount = 0;
   }
 
   cleanup(): void {

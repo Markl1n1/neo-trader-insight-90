@@ -5,8 +5,8 @@ import { signalDebouncer } from './signalDebouncer';
 export interface TradingSignal {
   id: string;
   symbol: string;
-  strategy: 'scalping' | 'intraday' | 'pump' | 'diagnostic';
-  signal: 'LONG' | 'SHORT' | 'WAIT' | 'TEST';
+  strategy: 'scalping' | 'intraday' | 'pump';
+  signal: 'LONG' | 'SHORT' | 'WAIT';
   timestamp: number;
   entryPrice: number;
   takeProfit: number;
@@ -15,22 +15,15 @@ export interface TradingSignal {
     rsi: number;
     macd: { macd: number; signal: number; line: number };
     ma5: number;
-    ma8: number;
-    ma13: number;
     ma20: number;
-    ma21: number;
-    ma34: number;
     ma50: number;
     bollingerUpper: number;
     bollingerLower: number;
-    bollingerMiddle?: number;
     currentPrice: number;
     volume: number;
-    avgVolume?: number;
     volumeSpike: boolean;
     cvd: number;
     cvdTrend: string;
-    cvdSlope?: number;
   };
   conditions: Record<string, boolean>;
   active: boolean;
@@ -48,7 +41,6 @@ class SignalPersistenceManager {
   private readonly storageKey = 'trading_signals';
   private readonly maxSignals = 1000;
   private isIndexedDBReady = false;
-  private signalsSaved = 0;
 
   constructor() {
     this.initializeIndexedDB();
@@ -67,11 +59,8 @@ class SignalPersistenceManager {
   }
 
   async saveSignal(signal: TradingSignal): Promise<void> {
-    console.log(`🎯 Attempting to save signal: ${signal.symbol} ${signal.strategy} ${signal.signal}`);
-    
     // Apply debouncing to prevent duplicates
     if (!signalDebouncer.shouldProcessSignal(signal.symbol, signal.strategy, signal.signal, signal.timestamp)) {
-      console.log(`🚫 Signal blocked by debouncer: ${signal.symbol} ${signal.strategy}`);
       return;
     }
 
@@ -100,24 +89,19 @@ class SignalPersistenceManager {
         localStorage.setItem(this.storageKey, JSON.stringify(history));
       }
 
-      this.signalsSaved++;
-      console.log(`💾 Successfully saved ${signal.signal} signal for ${signal.symbol} (${signal.strategy}) - Total saved: ${this.signalsSaved}`);
+      console.log(`💾 Saved ${signal.signal} signal for ${signal.symbol} (${signal.strategy})`);
 
       // Send to Google Sheets if configured
       if (googleSheetsService.isConfigured()) {
         try {
-          console.log(`📊 Attempting to send signal to Google Sheets: ${signal.symbol} ${signal.strategy}`);
           await googleSheetsService.appendSignalToSheet(signal);
-          console.log(`✅ Signal successfully sent to Google Sheets: ${signal.symbol} ${signal.strategy}`);
+          console.log('📊 Signal sent to Google Sheets');
         } catch (error) {
-          console.error('❌ Failed to send signal to Google Sheets:', error);
-          // Don't throw here - we still want to save locally even if Sheets fails
+          console.error('Failed to send signal to Google Sheets:', error);
         }
-      } else {
-        console.log('📊 Google Sheets not configured - signal saved locally only');
       }
     } catch (error) {
-      console.error('💥 Error saving signal:', error);
+      console.error('Error saving signal:', error);
       throw error;
     }
   }
@@ -133,10 +117,6 @@ class SignalPersistenceManager {
     }
     
     return { signals: [], lastUpdate: Date.now() };
-  }
-
-  getSavedSignalsCount(): number {
-    return this.signalsSaved;
   }
 
   async getActiveSignals(): Promise<TradingSignal[]> {

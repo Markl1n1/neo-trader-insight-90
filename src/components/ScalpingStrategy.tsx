@@ -1,3 +1,4 @@
+
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { signalPersistence } from '../utils/signalPersistence';
 import type { IndicatorValues } from '../utils/indicators';
@@ -19,38 +20,29 @@ const ScalpingStrategy = ({ symbol, currentPrice, indicators }: ScalpingStrategy
     );
   }
 
-  // Relaxed scalping strategy conditions with better logging
+  // Revised scalping strategy conditions
   const checkScalpingConditions = () => {
     const entryPrice = currentPrice;
     const takeProfit = entryPrice * 1.005; // +0.5% for scalping
     const stopLoss = entryPrice * 0.9975; // -0.25% stop loss
     
-    // Step 1: Check RSI (< 40, relaxed from 35)
-    const rsiValue = indicators.rsi || 0;
-    const rsiCondition = rsiValue < 40;
+    // Step 1: Check RSI (< 35)
+    const rsiCondition = (indicators.rsi || 0) < 35;
     
     // Step 2: Check Moving Averages (EMA8 > EMA21)
-    const ma8Value = indicators.ma8 || 0;
-    const ma21Value = indicators.ma21 || 0;
-    const maCondition = ma8Value > ma21Value;
+    const maCondition = (indicators.ma8 || 0) > (indicators.ma21 || 0);
     
-    // Step 3: Check Bollinger Bands (Price ≤ BBLower × 1.01, relaxed from 1.005)
-    const bollingerLowerValue = indicators.bollingerLower || 0;
-    const bollingerCondition = currentPrice <= bollingerLowerValue * 1.01;
+    // Step 3: Check Bollinger Bands (Price ≤ BBLower × 1.005)
+    const bollingerCondition = currentPrice <= (indicators.bollingerLower || 0) * 1.005;
     
     // Step 4: Check MACD (MACD Line > Signal Line)
-    const macdLineValue = indicators.macd?.line || 0;
-    const macdSignalValue = indicators.macd?.signal || 0;
-    const macdCondition = macdLineValue > macdSignalValue;
+    const macdCondition = (indicators.macd?.line || 0) > (indicators.macd?.signal || 0);
     
-    // Step 5: Check Volume (> AvgVolume × 1.5, relaxed from 2.0)
-    const volumeValue = indicators.volume || 0;
-    const avgVolumeValue = indicators.avgVolume || 1;
-    const volumeCondition = volumeValue > avgVolumeValue * 1.5;
+    // Step 5: Check Volume (> AvgVolume × 2)
+    const volumeCondition = (indicators.volume || 0) > (indicators.avgVolume || 0) * 2;
     
-    // Step 6: Check CVD Slope (> -5, more lenient)
-    const cvdSlopeValue = indicators.cvdSlope || 0;
-    const cvdCondition = cvdSlopeValue > -5;
+    // Step 6: Check CVD Slope (> 0, last 5 candles)
+    const cvdCondition = (indicators.cvdSlope || 0) > 0;
     
     const conditions = {
       rsi: rsiCondition,
@@ -62,17 +54,6 @@ const ScalpingStrategy = ({ symbol, currentPrice, indicators }: ScalpingStrategy
     };
     
     const allConditionsMet = Object.values(conditions).every(Boolean);
-    
-    // Enhanced logging for debugging
-    console.log(`🔍 Scalping conditions for ${symbol}:`, {
-      rsi: `${rsiValue.toFixed(2)} < 40: ${rsiCondition}`,
-      ma: `${ma8Value.toFixed(4)} > ${ma21Value.toFixed(4)}: ${maCondition}`,
-      bollinger: `${currentPrice.toFixed(4)} <= ${(bollingerLowerValue * 1.01).toFixed(4)}: ${bollingerCondition}`,
-      macd: `${macdLineValue.toFixed(6)} > ${macdSignalValue.toFixed(6)}: ${macdCondition}`,
-      volume: `${volumeValue.toLocaleString()} > ${(avgVolumeValue * 1.5).toLocaleString()}: ${volumeCondition}`,
-      cvd: `${cvdSlopeValue.toFixed(2)} > -5: ${cvdCondition}`,
-      allMet: allConditionsMet
-    });
     
     return {
       entryPrice,
@@ -120,7 +101,6 @@ const ScalpingStrategy = ({ symbol, currentPrice, indicators }: ScalpingStrategy
       active: true
     };
     
-    console.log(`🚀 SCALPING SIGNAL GENERATED for ${symbol}:`, signal);
     signalPersistence.saveSignal(signal);
   }
 

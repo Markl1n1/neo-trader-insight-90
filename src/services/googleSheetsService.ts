@@ -1,3 +1,4 @@
+
 export interface GoogleSheetsConfig {
   spreadsheetId: string;
   serviceAccountKey: string;
@@ -21,9 +22,6 @@ class GoogleSheetsService {
   private config: GoogleSheetsConfig | null = null;
   private accessToken: string | null = null;
   private tokenExpiry: number = 0;
-  private lastError: string | null = null;
-  private successCount: number = 0;
-  private errorCount: number = 0;
 
   setConfig(config: GoogleSheetsConfig): void {
     this.config = config;
@@ -41,14 +39,6 @@ class GoogleSheetsService {
     }
     
     return null;
-  }
-
-  getStats(): { successCount: number; errorCount: number; lastError: string | null } {
-    return {
-      successCount: this.successCount,
-      errorCount: this.errorCount,
-      lastError: this.lastError
-    };
   }
 
   private async getAccessToken(): Promise<string> {
@@ -148,85 +138,59 @@ class GoogleSheetsService {
   async appendSignalToSheet(signal: any): Promise<void> {
     const config = this.getConfig();
     if (!config) {
-      const error = 'Google Sheets not configured';
-      this.lastError = error;
-      throw new Error(error);
+      throw new Error('Google Sheets not configured');
     }
 
-    try {
-      const accessToken = await this.getAccessToken();
-      
-      // Updated to handle new EMA periods and ensure all fields are properly mapped
-      const values = [[
-        signal.id,
-        signal.symbol,
-        signal.strategy,
-        signal.signal,
-        new Date(signal.timestamp).toISOString(),
-        signal.entryPrice,
-        signal.takeProfit,
-        signal.stopLoss,
-        signal.indicators.rsi || 0,
-        signal.indicators.macd?.line || 0,
-        signal.indicators.macd?.signal || 0,
-        signal.indicators.ma5 || 0,
-        signal.indicators.ma8 || 0,
-        signal.indicators.ma13 || 0,
-        signal.indicators.ma20 || 0,
-        signal.indicators.ma21 || 0,
-        signal.indicators.ma34 || 0,
-        signal.indicators.ma50 || 0,
-        signal.indicators.bollingerUpper || 0,
-        signal.indicators.bollingerLower || 0,
-        signal.indicators.bollingerMiddle || 0,
-        signal.indicators.currentPrice || 0,
-        signal.indicators.volume || 0,
-        signal.indicators.avgVolume || 0,
-        signal.indicators.volumeSpike || false,
-        signal.indicators.cvd || 0,
-        signal.indicators.cvdTrend || 'neutral',
-        signal.indicators.cvdSlope || 0,
-        signal.active || false,
-        signal.executed || false,
-        signal.executedAt ? new Date(signal.executedAt).toISOString() : '',
-        signal.pnl || ''
-      ]];
+    const accessToken = await this.getAccessToken();
+    
+    const values = [[
+      signal.id,
+      signal.symbol,
+      signal.strategy,
+      signal.signal,
+      new Date(signal.timestamp).toISOString(),
+      signal.entryPrice,
+      signal.takeProfit,
+      signal.stopLoss,
+      signal.indicators.rsi,
+      signal.indicators.macd.line,
+      signal.indicators.macd.signal,
+      signal.indicators.ma5,
+      signal.indicators.ma20,
+      signal.indicators.ma50,
+      signal.indicators.bollingerUpper,
+      signal.indicators.bollingerLower,
+      signal.indicators.currentPrice,
+      signal.indicators.volume,
+      signal.indicators.volumeSpike,
+      signal.indicators.cvd,
+      signal.indicators.cvdTrend,
+      signal.active,
+      signal.executed || false,
+      signal.executedAt ? new Date(signal.executedAt).toISOString() : '',
+      signal.pnl || ''
+    ]];
 
-      const response = await fetch(
-        `https://sheets.googleapis.com/v4/spreadsheets/${config.spreadsheetId}/values/${config.sheetName}:append?valueInputOption=RAW`,
-        {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${accessToken}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            values,
-          }),
-        }
-      );
-
-      if (!response.ok) {
-        const error = await response.text();
-        this.lastError = `Failed to append to sheet: ${error}`;
-        this.errorCount++;
-        throw new Error(this.lastError);
+    const response = await fetch(
+      `https://sheets.googleapis.com/v4/spreadsheets/${config.spreadsheetId}/values/${config.sheetName}:append?valueInputOption=RAW`,
+      {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          values,
+        }),
       }
+    );
 
-      this.successCount++;
-      this.lastError = null;
-      console.log('📊 Signal successfully appended to Google Sheets:', {
-        symbol: signal.symbol,
-        strategy: signal.strategy,
-        signal: signal.signal,
-        timestamp: new Date(signal.timestamp).toISOString()
-      });
-    } catch (error) {
-      this.errorCount++;
-      this.lastError = error instanceof Error ? error.message : 'Unknown error';
-      console.error('❌ Failed to append signal to Google Sheets:', error);
-      throw error;
+    if (!response.ok) {
+      const error = await response.text();
+      throw new Error(`Failed to append to sheet: ${error}`);
     }
+
+    console.log('📊 Signal appended to Google Sheets');
   }
 
   isConfigured(): boolean {
