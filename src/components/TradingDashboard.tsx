@@ -1,7 +1,8 @@
+
 import { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { TradingPair } from './TradingPair';
+import TradingPair from './TradingPair';
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { RefreshCw } from 'lucide-react';
 import { Skeleton } from "@/components/ui/skeleton"
