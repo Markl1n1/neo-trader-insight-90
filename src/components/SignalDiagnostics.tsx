@@ -44,8 +44,8 @@ const SignalDiagnostics = () => {
       const testSignal = {
         id: 'diagnostic_test_' + Date.now(),
         symbol: 'BTCUSDT',
-        strategy: 'diagnostic',
-        signal: 'TEST',
+        strategy: 'diagnostic' as const,
+        signal: 'TEST' as const,
         timestamp: Date.now(),
         entryPrice: 50000,
         takeProfit: 51000,
