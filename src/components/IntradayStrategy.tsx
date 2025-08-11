@@ -20,29 +20,39 @@ const IntradayStrategy = ({ symbol, currentPrice, indicators }: IntradayStrategy
     );
   }
 
-  // Revised intraday strategy conditions
+  // Relaxed intraday strategy conditions
   const checkIntradayConditions = () => {
     const entryPrice = currentPrice;
     const takeProfit = entryPrice * 1.02; // +2% for intraday
     const stopLoss = entryPrice * 0.99; // -1% stop loss
     
-    // Step 1: Check Bollinger Bands (Price ≤ BBLower × 1.005)
-    const bollingerCondition = currentPrice <= (indicators.bollingerLower || 0) * 1.005;
+    // Step 1: Check Bollinger Bands (Price ≤ BBLower × 1.01) - Relaxed multiplier
+    const bollingerLowerValue = indicators.bollingerLower || 0;
+    const bollingerCondition = currentPrice <= bollingerLowerValue * 1.01;
     
     // Step 2: Check MACD (MACD Line > Signal Line)
-    const macdCondition = (indicators.macd?.line || 0) > (indicators.macd?.signal || 0);
+    const macdLineValue = indicators.macd?.line || 0;
+    const macdSignalValue = indicators.macd?.signal || 0;
+    const macdCondition = macdLineValue > macdSignalValue;
     
-    // Step 3: Check RSI (40 < RSI < 60)
-    const rsiCondition = (indicators.rsi || 0) > 40 && (indicators.rsi || 0) < 60;
+    // Step 3: Check RSI (35 < RSI < 65) - Relaxed range
+    const rsiValue = indicators.rsi || 0;
+    const rsiCondition = rsiValue > 35 && rsiValue < 65;
     
     // Step 4: Check Moving Averages (Price > EMA34 AND EMA20 > EMA34)
-    const maCondition = currentPrice > (indicators.ma34 || 0) && (indicators.ma20 || 0) > (indicators.ma34 || 0);
+    const ma20Value = indicators.ma20 || 0;
+    const ma34Value = indicators.ma34 || 0;
+    const maCondition = currentPrice > ma34Value && ma20Value > ma34Value;
     
-    // Step 5: Check Volume (> AvgVolume × 1.5)
-    const volumeCondition = (indicators.volume || 0) > (indicators.avgVolume || 0) * 1.5;
+    // Step 5: Check Volume (> AvgVolume × 1.2) - Relaxed from 1.5x
+    const volumeValue = indicators.volume || 0;
+    const avgVolumeValue = indicators.avgVolume || 0;
+    const volumeCondition = volumeValue > avgVolumeValue * 1.2;
     
     // Step 6: Check CVD (> 0 with increasing slope, last 10 candles)
-    const cvdCondition = (indicators.cvd || 0) > 0 && (indicators.cvdSlope || 0) > 0;
+    const cvdValue = indicators.cvd || 0;
+    const cvdSlopeValue = indicators.cvdSlope || 0;
+    const cvdCondition = cvdValue > 0 && cvdSlopeValue > 0;
     
     const conditions = {
       bollingerBands: bollingerCondition,
@@ -54,6 +64,21 @@ const IntradayStrategy = ({ symbol, currentPrice, indicators }: IntradayStrategy
     };
     
     const allConditionsMet = Object.values(conditions).every(Boolean);
+    
+    // Enhanced logging for condition proximity
+    if (!allConditionsMet) {
+      const proximityLogs = [];
+      if (!bollingerCondition) proximityLogs.push(`BB: Price=${currentPrice.toFixed(4)} vs BBLower*1.01=${(bollingerLowerValue * 1.01).toFixed(4)}`);
+      if (!macdCondition) proximityLogs.push(`MACD: Line=${macdLineValue.toFixed(6)} vs Signal=${macdSignalValue.toFixed(6)}`);
+      if (!rsiCondition) proximityLogs.push(`RSI: ${rsiValue.toFixed(2)} (need 35-65)`);
+      if (!maCondition) proximityLogs.push(`MA: Price=${currentPrice.toFixed(4)} vs EMA34=${ma34Value.toFixed(4)}, EMA20=${ma20Value.toFixed(4)} vs EMA34=${ma34Value.toFixed(4)}`);
+      if (!volumeCondition) proximityLogs.push(`Volume: ${volumeValue.toLocaleString()} vs Avg*1.2=${(avgVolumeValue * 1.2).toLocaleString()}`);
+      if (!cvdCondition) proximityLogs.push(`CVD: ${cvdValue.toLocaleString()} (need > 0), Slope: ${cvdSlopeValue.toFixed(2)} (need > 0)`);
+      
+      console.log(`📊 ${symbol} Intraday conditions not met:`, proximityLogs.join(', '));
+    } else {
+      console.log(`🚀 ${symbol} Intraday ALL CONDITIONS MET - Generating LONG signal!`);
+    }
     
     return {
       entryPrice,
@@ -101,6 +126,7 @@ const IntradayStrategy = ({ symbol, currentPrice, indicators }: IntradayStrategy
       active: true
     };
     
+    console.log(`💾 Saving intraday signal for ${symbol}:`, signal);
     signalPersistence.saveSignal(signal);
   }
 
@@ -113,8 +139,8 @@ const IntradayStrategy = ({ symbol, currentPrice, indicators }: IntradayStrategy
           {/* Bollinger Bands Check */}
           <div className={`p-3 rounded-lg ${strategy.conditions.bollingerBands ? 'bg-green-500/20' : 'bg-red-500/20'}`}>
             <div className="flex justify-between items-center">
-              <span className="font-medium">Price ≤ BBLower × 1.005</span>
-              <span className="font-mono">{currentPrice.toFixed(4)} ≤ {((indicators.bollingerLower || 0) * 1.005).toFixed(4)}</span>
+              <span className="font-medium">Price ≤ BBLower × 1.01</span>
+              <span className="font-mono">{currentPrice.toFixed(4)} ≤ {((indicators.bollingerLower || 0) * 1.01).toFixed(4)}</span>
               <span className={`px-2 py-1 rounded text-xs font-medium ${
                 strategy.conditions.bollingerBands ? 'bg-green-500/30 text-green-400' : 'bg-red-500/30 text-red-400'
               }`}>
@@ -139,7 +165,7 @@ const IntradayStrategy = ({ symbol, currentPrice, indicators }: IntradayStrategy
           {/* RSI Check */}
           <div className={`p-3 rounded-lg ${strategy.conditions.rsi ? 'bg-green-500/20' : 'bg-red-500/20'}`}>
             <div className="flex justify-between items-center">
-              <span className="font-medium">RSI (40-60)</span>
+              <span className="font-medium">RSI (35-65)</span>
               <span className="font-mono">{(indicators.rsi || 0).toFixed(2)}</span>
               <span className={`px-2 py-1 rounded text-xs font-medium ${
                 strategy.conditions.rsi ? 'bg-green-500/30 text-green-400' : 'bg-red-500/30 text-red-400'
@@ -165,8 +191,8 @@ const IntradayStrategy = ({ symbol, currentPrice, indicators }: IntradayStrategy
           {/* Volume Check */}
           <div className={`p-3 rounded-lg ${strategy.conditions.volume ? 'bg-green-500/20' : 'bg-red-500/20'}`}>
             <div className="flex justify-between items-center">
-              <span className="font-medium">Volume &gt; 1.5x Avg</span>
-              <span className="font-mono">{(indicators.volume || 0).toLocaleString()} / {(indicators.avgVolume || 0).toLocaleString()}</span>
+              <span className="font-medium">Volume &gt; 1.2x Avg</span>
+              <span className="font-mono">{(indicators.volume || 0).toLocaleString()} / {((indicators.avgVolume || 0) * 1.2).toLocaleString()}</span>
               <span className={`px-2 py-1 rounded text-xs font-medium ${
                 strategy.conditions.volume ? 'bg-green-500/30 text-green-400' : 'bg-red-500/30 text-red-400'
               }`}>

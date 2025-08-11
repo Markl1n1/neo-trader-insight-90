@@ -20,29 +20,39 @@ const PumpStrategy = ({ symbol, currentPrice, indicators }: PumpStrategyProps) =
     );
   }
 
-  // Revised pump mode strategy conditions
+  // Relaxed pump mode strategy conditions
   const checkPumpConditions = () => {
     const entryPrice = currentPrice;
     const takeProfit = entryPrice * 1.03; // +3% for pump mode
     const stopLoss = entryPrice * 0.99; // -1% stop loss
     
-    // Step 1: Volume (> AvgVolume × 2.5)
-    const volumeCondition = (indicators.volume || 0) > (indicators.avgVolume || 0) * 2.5;
+    // Step 1: Volume (> AvgVolume × 2) - Relaxed from 2.5x
+    const volumeValue = indicators.volume || 0;
+    const avgVolumeValue = indicators.avgVolume || 0;
+    const volumeCondition = volumeValue > avgVolumeValue * 2;
     
     // Step 2: RSI (50 < RSI < 85)
-    const rsiCondition = (indicators.rsi || 0) > 50 && (indicators.rsi || 0) < 85;
+    const rsiValue = indicators.rsi || 0;
+    const rsiCondition = rsiValue > 50 && rsiValue < 85;
     
     // Step 3: Moving Averages (Price > EMA13 AND EMA5 > EMA13)
-    const maCondition = currentPrice > (indicators.ma13 || 0) && (indicators.ma5 || 0) > (indicators.ma13 || 0);
+    const ma5Value = indicators.ma5 || 0;
+    const ma13Value = indicators.ma13 || 0;
+    const maCondition = currentPrice > ma13Value && ma5Value > ma13Value;
     
     // Step 4: MACD (MACD Line > Signal AND MACD Line > 0)
-    const macdCondition = (indicators.macd?.line || 0) > (indicators.macd?.signal || 0) && (indicators.macd?.line || 0) > 0;
+    const macdLineValue = indicators.macd?.line || 0;
+    const macdSignalValue = indicators.macd?.signal || 0;
+    const macdCondition = macdLineValue > macdSignalValue && macdLineValue > 0;
     
     // Step 5: CVD (> 0 with slope > 0, last 3-5 candles)
-    const cvdCondition = (indicators.cvd || 0) > 0 && (indicators.cvdSlope || 0) > 0;
+    const cvdValue = indicators.cvd || 0;
+    const cvdSlopeValue = indicators.cvdSlope || 0;
+    const cvdCondition = cvdValue > 0 && cvdSlopeValue > 0;
     
     // Step 6: Price breakout above Bollinger Middle
-    const bollingerCondition = currentPrice > (indicators.bollingerMiddle || 0);
+    const bollingerMiddleValue = indicators.bollingerMiddle || 0;
+    const bollingerCondition = currentPrice > bollingerMiddleValue;
     
     const conditions = {
       volume: volumeCondition,
@@ -54,6 +64,21 @@ const PumpStrategy = ({ symbol, currentPrice, indicators }: PumpStrategyProps) =
     };
     
     const allConditionsMet = Object.values(conditions).every(Boolean);
+    
+    // Enhanced logging for condition proximity
+    if (!allConditionsMet) {
+      const proximityLogs = [];
+      if (!volumeCondition) proximityLogs.push(`Volume: ${volumeValue.toLocaleString()} vs Avg*2=${(avgVolumeValue * 2).toLocaleString()}`);
+      if (!rsiCondition) proximityLogs.push(`RSI: ${rsiValue.toFixed(2)} (need 50-85)`);
+      if (!maCondition) proximityLogs.push(`MA: Price=${currentPrice.toFixed(4)} vs EMA13=${ma13Value.toFixed(4)}, EMA5=${ma5Value.toFixed(4)} vs EMA13=${ma13Value.toFixed(4)}`);
+      if (!macdCondition) proximityLogs.push(`MACD: Line=${macdLineValue.toFixed(6)} vs Signal=${macdSignalValue.toFixed(6)} (Line must be > Signal and > 0)`);
+      if (!cvdCondition) proximityLogs.push(`CVD: ${cvdValue.toLocaleString()} (need > 0), Slope: ${cvdSlopeValue.toFixed(2)} (need > 0)`);
+      if (!bollingerCondition) proximityLogs.push(`BB: Price=${currentPrice.toFixed(4)} vs BBMiddle=${bollingerMiddleValue.toFixed(4)}`);
+      
+      console.log(`📊 ${symbol} Pump conditions not met:`, proximityLogs.join(', '));
+    } else {
+      console.log(`🚀 ${symbol} Pump ALL CONDITIONS MET - Generating LONG signal!`);
+    }
     
     return {
       entryPrice,
@@ -101,6 +126,7 @@ const PumpStrategy = ({ symbol, currentPrice, indicators }: PumpStrategyProps) =
       active: true
     };
     
+    console.log(`💾 Saving pump signal for ${symbol}:`, signal);
     signalPersistence.saveSignal(signal);
   }
 
@@ -113,8 +139,8 @@ const PumpStrategy = ({ symbol, currentPrice, indicators }: PumpStrategyProps) =
           {/* Volume Check */}
           <div className={`p-3 rounded-lg ${strategy.conditions.volume ? 'bg-green-500/20' : 'bg-red-500/20'}`}>
             <div className="flex justify-between items-center">
-              <span className="font-medium">Volume &gt; 2.5x Avg</span>
-              <span className="font-mono">{(indicators.volume || 0).toLocaleString()} / {(indicators.avgVolume || 0).toLocaleString()}</span>
+              <span className="font-medium">Volume &gt; 2x Avg</span>
+              <span className="font-mono">{(indicators.volume || 0).toLocaleString()} / {((indicators.avgVolume || 0) * 2).toLocaleString()}</span>
               <span className={`px-2 py-1 rounded text-xs font-medium ${
                 strategy.conditions.volume ? 'bg-green-500/30 text-green-400' : 'bg-red-500/30 text-red-400'
               }`}>

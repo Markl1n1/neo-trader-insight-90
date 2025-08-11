@@ -20,29 +20,38 @@ const ScalpingStrategy = ({ symbol, currentPrice, indicators }: ScalpingStrategy
     );
   }
 
-  // Revised scalping strategy conditions
+  // Relaxed scalping strategy conditions
   const checkScalpingConditions = () => {
     const entryPrice = currentPrice;
     const takeProfit = entryPrice * 1.005; // +0.5% for scalping
     const stopLoss = entryPrice * 0.9975; // -0.25% stop loss
     
-    // Step 1: Check RSI (< 35)
-    const rsiCondition = (indicators.rsi || 0) < 35;
+    // Step 1: Check RSI (< 40) - Relaxed from 35
+    const rsiValue = indicators.rsi || 0;
+    const rsiCondition = rsiValue < 40;
     
     // Step 2: Check Moving Averages (EMA8 > EMA21)
-    const maCondition = (indicators.ma8 || 0) > (indicators.ma21 || 0);
+    const ma8Value = indicators.ma8 || 0;
+    const ma21Value = indicators.ma21 || 0;
+    const maCondition = ma8Value > ma21Value;
     
-    // Step 3: Check Bollinger Bands (Price ≤ BBLower × 1.005)
-    const bollingerCondition = currentPrice <= (indicators.bollingerLower || 0) * 1.005;
+    // Step 3: Check Bollinger Bands (Price ≤ BBLower × 1.01) - Relaxed multiplier
+    const bollingerLowerValue = indicators.bollingerLower || 0;
+    const bollingerCondition = currentPrice <= bollingerLowerValue * 1.01;
     
     // Step 4: Check MACD (MACD Line > Signal Line)
-    const macdCondition = (indicators.macd?.line || 0) > (indicators.macd?.signal || 0);
+    const macdLineValue = indicators.macd?.line || 0;
+    const macdSignalValue = indicators.macd?.signal || 0;
+    const macdCondition = macdLineValue > macdSignalValue;
     
-    // Step 5: Check Volume (> AvgVolume × 2)
-    const volumeCondition = (indicators.volume || 0) > (indicators.avgVolume || 0) * 2;
+    // Step 5: Check Volume (> AvgVolume × 1.5) - Relaxed from 2x
+    const volumeValue = indicators.volume || 0;
+    const avgVolumeValue = indicators.avgVolume || 0;
+    const volumeCondition = volumeValue > avgVolumeValue * 1.5;
     
     // Step 6: Check CVD Slope (> 0, last 5 candles)
-    const cvdCondition = (indicators.cvdSlope || 0) > 0;
+    const cvdSlopeValue = indicators.cvdSlope || 0;
+    const cvdCondition = cvdSlopeValue > 0;
     
     const conditions = {
       rsi: rsiCondition,
@@ -54,6 +63,21 @@ const ScalpingStrategy = ({ symbol, currentPrice, indicators }: ScalpingStrategy
     };
     
     const allConditionsMet = Object.values(conditions).every(Boolean);
+    
+    // Enhanced logging for condition proximity
+    if (!allConditionsMet) {
+      const proximityLogs = [];
+      if (!rsiCondition) proximityLogs.push(`RSI: ${rsiValue.toFixed(2)} (need < 40)`);
+      if (!maCondition) proximityLogs.push(`MA: EMA8=${ma8Value.toFixed(4)} vs EMA21=${ma21Value.toFixed(4)} (need EMA8 > EMA21)`);
+      if (!bollingerCondition) proximityLogs.push(`BB: Price=${currentPrice.toFixed(4)} vs BBLower*1.01=${(bollingerLowerValue * 1.01).toFixed(4)}`);
+      if (!macdCondition) proximityLogs.push(`MACD: Line=${macdLineValue.toFixed(6)} vs Signal=${macdSignalValue.toFixed(6)}`);
+      if (!volumeCondition) proximityLogs.push(`Volume: ${volumeValue.toLocaleString()} vs Avg*1.5=${(avgVolumeValue * 1.5).toLocaleString()}`);
+      if (!cvdCondition) proximityLogs.push(`CVD Slope: ${cvdSlopeValue.toFixed(2)} (need > 0)`);
+      
+      console.log(`📊 ${symbol} Scalping conditions not met:`, proximityLogs.join(', '));
+    } else {
+      console.log(`🚀 ${symbol} Scalping ALL CONDITIONS MET - Generating LONG signal!`);
+    }
     
     return {
       entryPrice,
@@ -101,6 +125,7 @@ const ScalpingStrategy = ({ symbol, currentPrice, indicators }: ScalpingStrategy
       active: true
     };
     
+    console.log(`💾 Saving scalping signal for ${symbol}:`, signal);
     signalPersistence.saveSignal(signal);
   }
 
@@ -113,7 +138,7 @@ const ScalpingStrategy = ({ symbol, currentPrice, indicators }: ScalpingStrategy
           {/* RSI Check */}
           <div className={`p-3 rounded-lg ${strategy.conditions.rsi ? 'bg-green-500/20' : 'bg-red-500/20'}`}>
             <div className="flex justify-between items-center">
-              <span className="font-medium">RSI &lt; 35</span>
+              <span className="font-medium">RSI &lt; 40</span>
               <span className="font-mono">{(indicators.rsi || 0).toFixed(2)}</span>
               <span className={`px-2 py-1 rounded text-xs font-medium ${
                 strategy.conditions.rsi ? 'bg-green-500/30 text-green-400' : 'bg-red-500/30 text-red-400'
@@ -139,8 +164,8 @@ const ScalpingStrategy = ({ symbol, currentPrice, indicators }: ScalpingStrategy
           {/* Bollinger Bands Check */}
           <div className={`p-3 rounded-lg ${strategy.conditions.bollingerBands ? 'bg-green-500/20' : 'bg-red-500/20'}`}>
             <div className="flex justify-between items-center">
-              <span className="font-medium">Price ≤ BBLower × 1.005</span>
-              <span className="font-mono">{currentPrice.toFixed(4)} ≤ {((indicators.bollingerLower || 0) * 1.005).toFixed(4)}</span>
+              <span className="font-medium">Price ≤ BBLower × 1.01</span>
+              <span className="font-mono">{currentPrice.toFixed(4)} ≤ {((indicators.bollingerLower || 0) * 1.01).toFixed(4)}</span>
               <span className={`px-2 py-1 rounded text-xs font-medium ${
                 strategy.conditions.bollingerBands ? 'bg-green-500/30 text-green-400' : 'bg-red-500/30 text-red-400'
               }`}>
@@ -165,8 +190,8 @@ const ScalpingStrategy = ({ symbol, currentPrice, indicators }: ScalpingStrategy
           {/* Volume Check */}
           <div className={`p-3 rounded-lg ${strategy.conditions.volume ? 'bg-green-500/20' : 'bg-red-500/20'}`}>
             <div className="flex justify-between items-center">
-              <span className="font-medium">Volume &gt; 2x Avg</span>
-              <span className="font-mono">{(indicators.volume || 0).toLocaleString()} / {(indicators.avgVolume || 0).toLocaleString()}</span>
+              <span className="font-medium">Volume &gt; 1.5x Avg</span>
+              <span className="font-mono">{(indicators.volume || 0).toLocaleString()} / {((indicators.avgVolume || 0) * 1.5).toLocaleString()}</span>
               <span className={`px-2 py-1 rounded text-xs font-medium ${
                 strategy.conditions.volume ? 'bg-green-500/30 text-green-400' : 'bg-red-500/30 text-red-400'
               }`}>

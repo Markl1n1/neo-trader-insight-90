@@ -1,4 +1,3 @@
-
 export interface GoogleSheetsConfig {
   spreadsheetId: string;
   serviceAccountKey: string;
@@ -152,23 +151,31 @@ class GoogleSheetsService {
       signal.entryPrice,
       signal.takeProfit,
       signal.stopLoss,
-      signal.indicators.rsi,
-      signal.indicators.macd.line,
-      signal.indicators.macd.signal,
-      signal.indicators.ma5,
-      signal.indicators.ma20,
-      signal.indicators.ma50,
-      signal.indicators.bollingerUpper,
-      signal.indicators.bollingerLower,
-      signal.indicators.currentPrice,
-      signal.indicators.volume,
-      signal.indicators.volumeSpike,
-      signal.indicators.cvd,
-      signal.indicators.cvdTrend,
+      signal.indicators.rsi || 0,
+      signal.indicators.macd?.line || 0,
+      signal.indicators.macd?.signal || 0,
+      signal.indicators.ma5 || 0,
+      signal.indicators.ma8 || 0, // Added ma8
+      signal.indicators.ma13 || 0, // Added ma13
+      signal.indicators.ma20 || 0,
+      signal.indicators.ma21 || 0, // Added ma21
+      signal.indicators.ma34 || 0, // Added ma34
+      signal.indicators.ma50 || 0,
+      signal.indicators.bollingerUpper || 0,
+      signal.indicators.bollingerLower || 0,
+      signal.indicators.bollingerMiddle || 0, // Added bollingerMiddle
+      signal.indicators.currentPrice || signal.indicators.price || 0,
+      signal.indicators.volume || 0,
+      signal.indicators.avgVolume || 0, // Added avgVolume
+      signal.indicators.volumeSpike || false,
+      signal.indicators.cvd || 0,
+      signal.indicators.cvdTrend || 'neutral',
+      signal.indicators.cvdSlope || 0, // Added cvdSlope
       signal.active,
       signal.executed || false,
       signal.executedAt ? new Date(signal.executedAt).toISOString() : '',
-      signal.pnl || ''
+      signal.pnl || '',
+      JSON.stringify(signal.conditions || {}) // Added conditions as JSON
     ]];
 
     const response = await fetch(
@@ -187,10 +194,11 @@ class GoogleSheetsService {
 
     if (!response.ok) {
       const error = await response.text();
+      console.error('❌ Google Sheets error:', error);
       throw new Error(`Failed to append to sheet: ${error}`);
     }
 
-    console.log('📊 Signal appended to Google Sheets');
+    console.log('📊 Signal appended to Google Sheets successfully');
   }
 
   isConfigured(): boolean {
